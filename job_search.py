@@ -4,38 +4,58 @@ import os
 import csv
 from email.message import EmailMessage
 from datetime import datetime
+from bs4 import BeautifulSoup  # pip install beautifulsoup4
 
 # ---- Config ----
-SEARCH_QUERY = "Angular developer 3.5 years site:naukri.com OR site:linkedin.com OR site:indeed.com India"
+SEARCH_QUERY = '"Angular developer" ("3 years" OR "3 yrs" OR "3+ years") India site:naukri.com OR site:linkedin.com OR site:indeed.com'
 MAX_RESULTS = 10
 
 SMTP_HOST = "smtp.gmail.com"
 SMTP_PORT = 587
-SMTP_USER = os.getenv("SMTP_USER")   # your email
+SMTP_USER = os.getenv("SMTP_USER")   # sender email
 SMTP_PASS = os.getenv("SMTP_PASS")   # app password
 EMAIL_TO   = os.getenv("EMAIL_TO")   # recipient email
 
-# ---- Simple Web Search (DuckDuckGo HTML scraping) ----
+# ---- Search via DuckDuckGo HTML ----
 def search_jobs(query, max_results=10):
-    url = f"https://duckduckgo.com/html/?q={query}"
+    url = f"https://html.duckduckgo.com/html/?q={query}"
     headers = {"User-Agent": "Mozilla/5.0"}
     resp = requests.get(url, headers=headers, timeout=15)
     resp.raise_for_status()
-    text = resp.text
+    soup = BeautifulSoup(resp.text, "html.parser")
 
     results = []
-    for line in text.split('href="')[1:]:
-        link = line.split('"')[0]
-        if link.startswith("http") and "duckduckgo.com" not in link:
-            results.append({"link": link})
+    for res in soup.select(".result__body"):
+        title_tag = res.select_one(".result__a")
+        snippet_tag = res.select_one(".result__snippet")
+        if not title_tag:
+            continue
+
+        title = title_tag.get_text(strip=True)
+        link = title_tag["href"]
+        snippet = snippet_tag.get_text(strip=True) if snippet_tag else ""
+
+        # ✅ Experience match check (3 years variations)
+        experience_keywords = ["3 years", "3 yrs", "3+ years"]
+        text_to_check = f"{title} {snippet}".lower()
+        experience_match = "Yes" if any(kw in text_to_check for kw in experience_keywords) else "No"
+
+        results.append({
+            "title": title,
+            "snippet": snippet,
+            "link": link,
+            "experience_match": experience_match
+        })
+
         if len(results) >= max_results:
             break
+
     return results
 
 # ---- Save to CSV ----
 def results_to_csv(results, filename):
     with open(filename, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=["link"])
+        writer = csv.DictWriter(f, fieldnames=["title", "snippet", "link", "experience_match"])
         writer.writeheader()
         writer.writerows(results)
 
@@ -47,7 +67,6 @@ def send_email(subject, body, attachment_path=None):
     msg["Subject"] = subject
     msg.set_content(body)
 
-    # Attach CSV if exists
     if attachment_path and os.path.exists(attachment_path):
         with open(attachment_path, "rb") as f:
             data = f.read()
@@ -72,17 +91,22 @@ def main():
         body = "No job results found today."
         csv_path = None
     else:
-        lines = ["Today's job search results:\n"]
+        lines = ["Today's Angular (3 yrs) Job Search Results:\n"]
         for i, r in enumerate(results, start=1):
-            lines.append(f"{i}. {r['link']}")
+            lines.append(f"{i}. {r['title']}")
+            lines.append(f"   Experience Match: {r['experience_match']}")
+            if r['snippet']:
+                lines.append(f"   {r['snippet']}")
+            lines.append(f"   {r['link']}\n")
         body = "\n".join(lines)
 
         # save csv
         csv_path = f"job_results_{datetime.now().strftime('%Y%m%d')}.csv"
         results_to_csv(results, csv_path)
 
-    send_email("Daily Angular Job Search Results", body, csv_path)
+    send_email("Daily Angular Job Search Results (3 yrs)", body, csv_path)
     print("Email sent!")
 
 if __name__ == "__main__":
     main()
+
