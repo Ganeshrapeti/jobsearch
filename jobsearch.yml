@@ -2,7 +2,7 @@ name: Daily Job Search
 
 on:
   schedule:
-    - cron: "30 6 * * *"   # 12:00 IST daily
+    - cron: "30 6 * * *"   # Runs daily at 12:00 IST (06:30 UTC)
   workflow_dispatch:
 
 jobs:
@@ -18,7 +18,7 @@ jobs:
           python-version: '3.x'
 
       - name: Install dependencies
-        run: pip install requests
+        run: pip install requests beautifulsoup4
 
       - name: Run job search
         env:
@@ -26,3 +26,4 @@ jobs:
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
         run: python job_search.py
+
